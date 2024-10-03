@@ -1,78 +1,146 @@
-const player = document.getElementById('player');
-const finish = document.getElementById('finish');
-const walls = document.querySelectorAll('.wall');
-const gameStatus = document.getElementById('game-status');
+const selectors = {
+  boardContainer: document.querySelector('.board-container'),
+  board: document.querySelector('.board'),
+  moves: document.querySelector('.moves'),
+  timer: document.querySelector('.timer'),
+  start: document.querySelector('button'),
+  win: document.querySelector('.win')
+}
 
-let playerPosition = { x: 0, y: 0 };
+const state = {
+  gameStarted: false,
+  flippedCards: 0,
+  totalFlips: 0,
+  totalTime: 0,
+  loop: null
+}
 
-document.addEventListener('keydown', function(event) {
-  switch (event.key) {
-    case 'ArrowUp':
-      movePlayer(0, -10);
-      break;
-    case 'ArrowDown':
-      movePlayer(0, 10);
-      break;
-    case 'ArrowLeft':
-      movePlayer(-10, 0);
-      break;
-    case 'ArrowRight':
-      movePlayer(10, 0);
-      break;
+const shuffle = array => {
+  const clonedArray = [...array]
+
+  for (let i = clonedArray.length - 1; i > 0; i--) {
+      const randomIndex = Math.floor(Math.random() * (i + 1))
+      const original = clonedArray[i]
+
+      clonedArray[i] = clonedArray[randomIndex]
+      clonedArray[randomIndex] = original
   }
-  checkFinish();
-});
 
-function movePlayer(dx, dy) {
-  const newX = playerPosition.x + dx;
-  const newY = playerPosition.y + dy;
+  return clonedArray
+}
+
+const pickRandom = (array, items) => {
+  const clonedArray = [...array]
+  const randomPicks = []
+
+  for (let i = 0; i < items; i++) {
+      const randomIndex = Math.floor(Math.random() * clonedArray.length)
+      
+      randomPicks.push(clonedArray[randomIndex])
+      clonedArray.splice(randomIndex, 1)
+  }
+
+  return randomPicks
+}
+
+const generateGame = () => {
+  const dimensions = selectors.board.getAttribute('data-dimension')  
+
+  if (dimensions % 2 !== 0) {
+      throw new Error("The dimension of the board must be an even number.")
+  }
+
+  const emojis = ['🥔', '🍒', '🥑', '🌽', '🥕', '🍇', '🍉', '🍌', '🥭', '🍍']
+  const picks = pickRandom(emojis, (dimensions * dimensions) / 2) 
+  const items = shuffle([...picks, ...picks])
+  const cards = `
+      <div class="board" style="grid-template-columns: repeat(${dimensions}, auto)">
+          ${items.map(item => `
+              <div class="card">
+                  <div class="card-front"></div>
+                  <div class="card-back">${item}</div>
+              </div>
+          `).join('')}
+     </div>
+  `
   
-  player.style.left = newX + 'px';
-  player.style.top = newY + 'px';
+  const parser = new DOMParser().parseFromString(cards, 'text/html')
 
-  if (!checkCollision(newX, newY)) {
-    playerPosition.x = newX;
-    playerPosition.y = newY;
-  } else {
-    // Si choca con una pared, no actualizar la posición
-    player.style.left = playerPosition.x + 'px';
-    player.style.top = playerPosition.y + 'px';
+  selectors.board.replaceWith(parser.querySelector('.board'))
+}
+
+const startGame = () => {
+  state.gameStarted = true
+  selectors.start.classList.add('disabled')
+
+  state.loop = setInterval(() => {
+      state.totalTime++
+
+      selectors.moves.innerText = `${state.totalFlips} moves`
+      selectors.timer.innerText = `Time: ${state.totalTime} sec`
+  }, 1000)
+}
+
+const flipBackCards = () => {
+  document.querySelectorAll('.card:not(.matched)').forEach(card => {
+      card.classList.remove('flipped')
+  })
+
+  state.flippedCards = 0
+}
+
+const flipCard = card => {
+  state.flippedCards++
+  state.totalFlips++
+
+  if (!state.gameStarted) {
+      startGame()
+  }
+
+  if (state.flippedCards <= 2) {
+      card.classList.add('flipped')
+  }
+
+  if (state.flippedCards === 2) {
+      const flippedCards = document.querySelectorAll('.flipped:not(.matched)')
+
+      if (flippedCards[0].innerText === flippedCards[1].innerText) {
+          flippedCards[0].classList.add('matched')
+          flippedCards[1].classList.add('matched')
+      }
+
+      setTimeout(() => {
+          flipBackCards()
+      }, 1000)
+  }
+  if (!document.querySelectorAll('.card:not(.flipped)').length) {
+      setTimeout(() => {
+          selectors.boardContainer.classList.add('flipped')
+          selectors.win.innerHTML = `
+              <span class="win-text">
+                  You won!<br />
+                  with <span class="highlight">${state.totalFlips}</span> moves<br />
+                  under <span class="highlight">${state.totalTime}</span> seconds
+              </span>
+          `
+
+          clearInterval(state.loop)
+      }, 1000)
   }
 }
 
-function checkCollision(newX, newY) {
-  const playerRect = {
-    left: newX,
-    right: newX + player.offsetWidth,
-    top: newY,
-    bottom: newY + player.offsetHeight
-  };
+const attachEventListeners = () => {
+  document.addEventListener('click', event => {
+      const eventTarget = event.target
+      const eventParent = eventTarget.parentElement
 
-  for (let wall of walls) {
-    const wallRect = wall.getBoundingClientRect();
-    if (
-      playerRect.right > wallRect.left &&
-      playerRect.left < wallRect.right &&
-      playerRect.bottom > wallRect.top &&
-      playerRect.top < wallRect.bottom
-    ) {
-      return true;
-    }
-  }
-  return false;
+      if (eventTarget.className.includes('card') && !eventParent.className.includes('flipped')) {
+          flipCard(eventParent)
+      } else if (eventTarget.nodeName === 'BUTTON' && !eventTarget.className.includes('disabled')) {
+          startGame()
+      }
+  })
 }
 
-function checkFinish() {
-  const playerRect = player.getBoundingClientRect();
-  const finishRect = finish.getBoundingClientRect();
-
-  if (
-    playerRect.right > finishRect.left &&
-    playerRect.left < finishRect.right &&
-    playerRect.bottom > finishRect.top &&
-    playerRect.top < finishRect.bottom
-  ) {
-    gameStatus.innerText = '¡Ganaste! Llegaste a la meta 🎉';
-    document.removeEventListener('keydown', movePlayer); // Desactivar movimiento
-  }
-}
+generateGame()
+attachEventListeners()
